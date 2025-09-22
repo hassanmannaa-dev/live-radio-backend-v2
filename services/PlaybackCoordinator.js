@@ -191,6 +191,73 @@ class PlaybackCoordinator {
     return state;
   }
 
+  async cancelSong(songId) {
+    if (!songId) {
+      throw new Error('Song ID is required');
+    }
+
+    // Check if canceling currently playing song
+    if (this.currentTrack && this.currentTrack.id === songId) {
+      console.log('Canceling currently playing song:', songId);
+
+      // Clear any active timers
+      if (this.playbackTimer) {
+        clearTimeout(this.playbackTimer);
+        this.playbackTimer = null;
+      }
+
+      if (this.endTimer) {
+        clearTimeout(this.endTimer);
+        this.endTimer = null;
+      }
+
+      // Clean up the current track file
+      if (this.currentTrack.filepath) {
+        try {
+          await this.tempFileManager.deleteFile(this.currentTrack.id);
+          console.log('Canceled song file deleted:', this.currentTrack.id);
+        } catch (error) {
+          console.log('Failed to delete canceled song file:', error.message);
+        }
+      }
+
+      // Notify clients that the song was canceled
+      this.io.emit('songCanceled', {
+        id: this.currentTrack.id,
+        title: this.currentTrack.title || 'Unknown'
+      });
+
+      this.currentTrack = null;
+
+      // Process next song in queue
+      await this.processNextInQueue();
+
+      return { success: true, message: 'Currently playing song canceled' };
+    }
+
+    // Check if canceling a song in queue
+    const queueIndex = this.queue.findIndex(item => item.id === songId);
+    if (queueIndex !== -1) {
+      const canceledSong = this.queue[queueIndex];
+      this.queue.splice(queueIndex, 1);
+
+      console.log('Removed song from queue:', songId);
+
+      // Update queue for all clients
+      this.broadcastQueueUpdate();
+
+      // Notify clients that the song was canceled
+      this.io.emit('songCanceled', {
+        id: canceledSong.id,
+        title: canceledSong.title || 'Unknown'
+      });
+
+      return { success: true, message: 'Song removed from queue' };
+    }
+
+    throw new Error('Song not found in current track or queue');
+  }
+
   async shutdown() {
     console.log('Shutting down PlaybackCoordinator');
 

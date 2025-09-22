@@ -107,6 +107,8 @@ class LiveRadioClient {
         this.socket.on('timesync', (data) => this.handleTimesync(data));
         this.socket.on('error', (data) => this.handleError(data));
         this.socket.on('requestResult', (data) => this.handleRequestResult(data));
+        this.socket.on('cancelResult', (data) => this.handleCancelResult(data));
+        this.socket.on('songCanceled', (data) => this.handleSongCanceled(data));
     }
 
     setupEventListeners() {
@@ -381,14 +383,26 @@ class LiveRadioClient {
         queueCount.textContent = data.queue.length;
         queueList.innerHTML = data.queue.map((item, index) => `
             <div class="queue-item">
-                ${index + 1}. ${item.title || `Video ${item.videoId}`}
-                <small style="color: #666; display: block;">ID: ${item.videoId}</small>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        ${index + 1}. ${item.title || `Video ${item.videoId}`}
+                        <small style="color: #666; display: block;">ID: ${item.videoId}</small>
+                    </div>
+                    <button onclick="cancelSong('${item.id}')" style="background-color: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-left: 10px;">✕</button>
+                </div>
             </div>
         `).join('');
     }
 
     handleError(data) {
         console.error('Server error:', data);
+
+        // Don't show "Song not found" errors as status updates - they're expected when double-clicking
+        if (data.message && data.message.includes('Song not found')) {
+            console.log('Song already canceled or not found');
+            return;
+        }
+
         this.updateStatus(`Error: ${data.message}`, 'error');
     }
 
@@ -397,6 +411,31 @@ class LiveRadioClient {
             console.log('Request accepted, position:', data.position);
         } else {
             alert(data.reason || 'Request was not accepted');
+        }
+    }
+
+    handleCancelResult(data) {
+        console.log('Cancel result:', data);
+        if (data.success) {
+            console.log('Song canceled successfully:', data.message);
+        } else {
+            console.error('Cancel failed:', data);
+        }
+    }
+
+    handleSongCanceled(data) {
+        console.log('Song canceled:', data);
+        this.showSystemMessage(`🚫 Song canceled: ${data.title}`);
+
+        // If the canceled song is the current track, clean up the frontend
+        if (this.currentTrack && this.currentTrack.id === data.id) {
+            console.log('Cleaning up canceled current track');
+            this.audio.pause();
+            this.audio.src = '';
+            this.hideNowPlaying();
+            this.updateStatus('Ready - No active playback', 'idle');
+            this.stopSyncCheck();
+            this.currentTrack = null;
         }
     }
 
@@ -414,6 +453,7 @@ class LiveRadioClient {
             <strong>${track.title || 'Unknown Title'}</strong><br>
             <small>Video ID: ${track.videoId}</small><br>
             <small>Duration: ${track.durationSec ? Math.floor(track.durationSec / 60) + ':' + String(track.durationSec % 60).padStart(2, '0') : 'Unknown'}</small>
+            <button onclick="cancelSong('${track.id}')" style="margin-top: 10px; background-color: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px;">🚫 Cancel Song</button>
         `;
 
         nowPlaying.style.display = 'block';
@@ -531,6 +571,16 @@ class LiveRadioClient {
         window.location.href = '/register.html';
     }
 
+    cancelSong(songId) {
+        if (!this.authenticated || !songId) {
+            console.error('Cannot cancel song: not authenticated or no songId provided');
+            return;
+        }
+
+        console.log('Canceling song:', songId);
+        this.socket.emit('cancelSong', { songId });
+    }
+
     sendChatMessage() {
         const chatInput = document.getElementById('chatInput');
         if (!chatInput || !this.authenticated) return;
@@ -622,6 +672,10 @@ class LiveRadioClient {
 
 window.requestSong = function() {
     window.client.requestSong();
+};
+
+window.cancelSong = function(songId) {
+    window.client.cancelSong(songId);
 };
 
 window.addEventListener('DOMContentLoaded', () => {

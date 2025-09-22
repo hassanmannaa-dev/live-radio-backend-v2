@@ -138,6 +138,25 @@ app.get('/current', authenticateUser, (req, res) => {
   res.json(state);
 });
 
+app.post('/cancel', authenticateUser, async (req, res) => {
+  try {
+    const { songId } = req.body;
+
+    if (!songId) {
+      return res.status(400).json({ error: 'Song ID is required' });
+    }
+
+    const result = await playbackCoordinator.cancelSong(songId);
+    res.json(result);
+  } catch (error) {
+    console.log('Error canceling song:', error.message);
+    if (error.message === 'Song not found in current track or queue') {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/audio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -278,6 +297,32 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.log('Error handling socket request:', error.message, 'socketId:', socket.id);
       socket.emit('error', { message: 'Internal server error' });
+    }
+  });
+
+  socket.on('cancelSong', async (data) => {
+    if (!socket.authenticated) {
+      socket.emit('error', { message: 'Authentication required' });
+      return;
+    }
+
+    try {
+      const { songId } = data;
+
+      if (!songId) {
+        socket.emit('error', { message: 'Song ID is required' });
+        return;
+      }
+
+      const result = await playbackCoordinator.cancelSong(songId);
+      socket.emit('cancelResult', result);
+    } catch (error) {
+      console.log('Error handling socket cancel request:', error.message, 'socketId:', socket.id);
+      if (error.message === 'Song not found in current track or queue') {
+        socket.emit('error', { message: error.message });
+      } else {
+        socket.emit('error', { message: 'Internal server error' });
+      }
     }
   });
 
