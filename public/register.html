@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Live Radio Sync</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            margin: 0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .avatar-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .avatar-option {
+            width: 60px;
+            height: 60px;
+            border: 3px solid #ddd;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f8f9fa;
+        }
+
+        .avatar-option:hover {
+            border-color: #007bff;
+            transform: scale(1.05);
+        }
+
+        .avatar-option.selected {
+            border-color: #007bff;
+            background: #e3f2fd;
+            transform: scale(1.1);
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8d7da;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .help-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 Join Live Radio Sync</h1>
+            <p>Choose your username and avatar to get started!</p>
+        </div>
+
+        <form id="registrationForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" maxlength="20" required>
+                <div class="help-text">2-20 characters, letters, numbers, underscore, or dash only</div>
+            </div>
+
+            <div class="form-group">
+                <label>Choose your avatar</label>
+                <div class="avatar-grid" id="avatarGrid"></div>
+                <input type="hidden" id="avatarId" name="avatarId" required>
+            </div>
+
+            <button type="submit" id="registerBtn">Join Radio</button>
+        </form>
+
+        <div class="error" id="errorMessage"></div>
+        <div class="loading" id="loadingMessage">Creating your account...</div>
+    </div>
+
+    <script>
+        const avatarEmojis = [
+            '😀', '😎', '🤓', '😇', '🥸', '🤠', '🥳', '😋', '🙂', '😌',
+            '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
+            '🚀', '⭐', '🎵', '🎸', '🎤', '🎧', '🎹', '🥁', '🎺', '🎷',
+            '🍕', '🍔', '🍟', '🌮', '🍰', '🍪', '🍩', '☕', '🧋', '🍓',
+            '⚽', '🏀', '🎾', '🏓', '🎮', '🕹️', '🎯', '🎲', '🃏', '🎪'
+        ];
+
+        let selectedAvatarId = null;
+
+        function initializeAvatars() {
+            const avatarGrid = document.getElementById('avatarGrid');
+
+            avatarEmojis.forEach((emoji, index) => {
+                const avatarOption = document.createElement('div');
+                avatarOption.className = 'avatar-option';
+                avatarOption.textContent = emoji;
+                avatarOption.setAttribute('data-avatar-id', index + 1);
+
+                avatarOption.addEventListener('click', () => {
+                    document.querySelectorAll('.avatar-option').forEach(option => {
+                        option.classList.remove('selected');
+                    });
+
+                    avatarOption.classList.add('selected');
+                    selectedAvatarId = index + 1;
+                    document.getElementById('avatarId').value = selectedAvatarId;
+                });
+
+                avatarGrid.appendChild(avatarOption);
+            });
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        function showLoading() {
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('registerBtn').disabled = true;
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingMessage').style.display = 'none';
+            document.getElementById('registerBtn').disabled = false;
+        }
+
+        async function handleRegistration(event) {
+            event.preventDefault();
+            hideError();
+
+            const username = document.getElementById('username').value.trim();
+            const avatarId = selectedAvatarId;
+
+            if (!username) {
+                showError('Please enter a username');
+                return;
+            }
+
+            if (!avatarId) {
+                showError('Please select an avatar');
+                return;
+            }
+
+            if (username.length < 2 || username.length > 20) {
+                showError('Username must be between 2 and 20 characters');
+                return;
+            }
+
+            if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+                showError('Username can only contain letters, numbers, underscore, or dash');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        avatarId: avatarId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    localStorage.setItem('userId', data.userId);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+
+                    window.location.href = '/';
+                } else {
+                    showError(data.error || 'Registration failed');
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                showError('Network error. Please try again.');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function checkExistingUser() {
+            const userId = localStorage.getItem('userId');
+            if (userId) {
+                fetch(`/user/${userId}`)
+                    .then(response => {
+                        if (response.ok) {
+                            window.location.href = '/';
+                        }
+                    })
+                    .catch(() => {
+                        localStorage.removeItem('userId');
+                        localStorage.removeItem('user');
+                    });
+            }
+        }
+
+        document.getElementById('registrationForm').addEventListener('submit', handleRegistration);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkExistingUser();
+            initializeAvatars();
+        });
+    </script>
+</body>
+</html>

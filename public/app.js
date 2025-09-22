@@ -8,11 +8,52 @@ class LiveRadioClient {
         this.syncCheckInterval = null;
         this.audioEnabled = false;
         this.pendingPlay = null;
+        this.user = null;
+        this.userId = null;
+        this.authenticated = false;
 
-        this.initializeSocket();
-        this.setupEventListeners();
-        this.setupAudioEnabling();
-        this.audio.addEventListener('loadeddata', () => this.onAudioLoaded());
+        this.checkAuthentication();
+    }
+
+    checkAuthentication() {
+        const userId = localStorage.getItem('userId');
+        const userData = localStorage.getItem('user');
+
+        if (!userId || !userData) {
+            window.location.href = '/register.html';
+            return;
+        }
+
+        try {
+            this.user = JSON.parse(userData);
+            this.userId = userId;
+
+            fetch(`/user/${userId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('User not found');
+                    }
+                    return response.json();
+                })
+                .then(userData => {
+                    this.user = userData;
+                    this.initializeSocket();
+                    this.setupEventListeners();
+                    this.setupAudioEnabling();
+                    this.audio.addEventListener('loadeddata', () => this.onAudioLoaded());
+                })
+                .catch(error => {
+                    console.error('Authentication check failed:', error);
+                    localStorage.removeItem('userId');
+                    localStorage.removeItem('user');
+                    window.location.href = '/register.html';
+                });
+        } catch (error) {
+            console.error('Invalid user data:', error);
+            localStorage.removeItem('userId');
+            localStorage.removeItem('user');
+            window.location.href = '/register.html';
+        }
     }
 
     initializeSocket() {
@@ -20,7 +61,37 @@ class LiveRadioClient {
 
         this.socket.on('connect', () => {
             this.updateConnectionStatus(true);
-            this.socket.emit('hello', { clientVersion: '1.0.0' });
+            this.socket.emit('authenticate', { userId: this.userId });
+        });
+
+        this.socket.on('authenticated', (data) => {
+            this.authenticated = true;
+            this.user = data.user;
+            console.log('Authenticated as:', this.user.username);
+            this.updateUserDisplay();
+        });
+
+        this.socket.on('authError', (data) => {
+            console.error('Authentication failed:', data.message);
+            localStorage.removeItem('userId');
+            localStorage.removeItem('user');
+            window.location.href = '/register.html';
+        });
+
+        this.socket.on('chatHistory', (data) => {
+            this.loadChatHistory(data.messages);
+        });
+
+        this.socket.on('newMessage', (message) => {
+            this.addChatMessage(message);
+        });
+
+        this.socket.on('userJoined', (data) => {
+            this.showSystemMessage(`${data.username} joined the radio! 👋`);
+        });
+
+        this.socket.on('userLeft', (data) => {
+            this.showSystemMessage(`${data.username} left the radio 👋`);
         });
 
         this.socket.on('disconnect', () => {
@@ -44,6 +115,26 @@ class LiveRadioClient {
                 this.requestSong();
             }
         });
+
+        const chatInput = document.getElementById('chatInput');
+        if (chatInput) {
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendChatMessage();
+                }
+            });
+        }
+
+        const sendButton = document.getElementById('sendButton');
+        if (sendButton) {
+            sendButton.addEventListener('click', () => this.sendChatMessage());
+        }
+
+        const logoutButton = document.getElementById('logoutButton');
+        if (logoutButton) {
+            logoutButton.addEventListener('click', () => this.logout());
+        }
     }
 
     setupAudioEnabling() {
@@ -404,6 +495,128 @@ class LiveRadioClient {
 
         this.socket.emit('request', { videoId });
         input.value = '';
+    }
+
+    updateUserDisplay() {
+        const userInfo = document.getElementById('userInfo');
+        if (userInfo && this.user) {
+            const avatarEmojis = [
+                '😀', '😎', '🤓', '😇', '🥸', '🤠', '🥳', '😋', '🙂', '😌',
+                '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
+                '🚀', '⭐', '🎵', '🎸', '🎤', '🎧', '🎹', '🥁', '🎺', '🎷',
+                '🍕', '🍔', '🍟', '🌮', '🍰', '🍪', '🍩', '☕', '🧋', '🍓',
+                '⚽', '🏀', '🎾', '🏓', '🎮', '🕹️', '🎯', '🎲', '🃏', '🎪'
+            ];
+
+            const avatar = avatarEmojis[this.user.avatarId - 1] || '😀';
+            userInfo.innerHTML = `
+                <span class="user-avatar">${avatar}</span>
+                <span class="username">${this.user.username}</span>
+                <button id="logoutButton" class="logout-btn">Logout</button>
+            `;
+
+            const logoutButton = document.getElementById('logoutButton');
+            if (logoutButton) {
+                logoutButton.addEventListener('click', () => this.logout());
+            }
+        }
+    }
+
+    logout() {
+        localStorage.removeItem('userId');
+        localStorage.removeItem('user');
+        if (this.socket) {
+            this.socket.disconnect();
+        }
+        window.location.href = '/register.html';
+    }
+
+    sendChatMessage() {
+        const chatInput = document.getElementById('chatInput');
+        if (!chatInput || !this.authenticated) return;
+
+        const message = chatInput.value.trim();
+        if (!message) return;
+
+        if (message.length > 500) {
+            alert('Message too long (max 500 characters)');
+            return;
+        }
+
+        this.socket.emit('chatMessage', { message });
+        chatInput.value = '';
+    }
+
+    loadChatHistory(messages) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) return;
+
+        chatMessages.innerHTML = '';
+        messages.forEach(message => {
+            this.addChatMessage(message, false);
+        });
+
+        this.scrollChatToBottom();
+    }
+
+    addChatMessage(message, shouldScroll = true) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) return;
+
+        const avatarEmojis = [
+            '😀', '😎', '🤓', '😇', '🥸', '🤠', '🥳', '😋', '🙂', '😌',
+            '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
+            '🚀', '⭐', '🎵', '🎸', '🎤', '🎧', '🎹', '🥁', '🎺', '🎷',
+            '🍕', '🍔', '🍟', '🌮', '🍰', '🍪', '🍩', '☕', '🧋', '🍓',
+            '⚽', '🏀', '🎾', '🏓', '🎮', '🕹️', '🎯', '🎲', '🃏', '🎪'
+        ];
+
+        const messageElement = document.createElement('div');
+        messageElement.className = 'chat-message';
+
+        const avatar = avatarEmojis[message.avatarId - 1] || '😀';
+        const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const isOwn = this.user && message.userId === this.user.id;
+
+        messageElement.innerHTML = `
+            <div class="message-header">
+                <span class="message-avatar">${avatar}</span>
+                <span class="message-username ${isOwn ? 'own-message' : ''}">${message.username}</span>
+                <span class="message-time">${time}</span>
+            </div>
+            <div class="message-content">${this.escapeHtml(message.message)}</div>
+        `;
+
+        chatMessages.appendChild(messageElement);
+
+        if (shouldScroll) {
+            this.scrollChatToBottom();
+        }
+    }
+
+    showSystemMessage(message) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) return;
+
+        const messageElement = document.createElement('div');
+        messageElement.className = 'system-message';
+        messageElement.innerHTML = `<span class="system-text">${this.escapeHtml(message)}</span>`;
+
+        chatMessages.appendChild(messageElement);
+        this.scrollChatToBottom();
+    }
+
+    scrollChatToBottom() {
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
