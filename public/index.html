@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Radio Sync</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .status.idle { background-color: #d4edda; color: #155724; }
+        .status.downloading { background-color: #fff3cd; color: #856404; }
+        .status.prepared { background-color: #cce5ff; color: #004085; }
+        .status.playing { background-color: #d1ecf1; color: #0c5460; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+
+        .now-playing {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .queue {
+            margin-top: 20px;
+        }
+
+        .queue-item {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            margin-bottom: 5px;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+
+        .help-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        audio {
+            width: 100%;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">Connecting...</div>
+
+    <div class="container">
+        <div class="header">
+            <h1>🎵 Live Radio Sync</h1>
+            <p>Synchronized YouTube Music streaming</p>
+        </div>
+
+        <div class="input-section">
+            <div class="input-group">
+                <input type="text" id="videoIdInput" placeholder="Enter YouTube Music video ID (11 characters)" maxlength="11">
+                <button id="playButton" onclick="requestSong()">Add to Queue</button>
+            </div>
+            <div class="help-text">
+                Example: From https://music.youtube.com/watch?v=<strong>dQw4w9WgXcQ</strong>, use <strong>dQw4w9WgXcQ</strong>
+            </div>
+        </div>
+
+        <div id="status" class="status idle">Ready - No active playback</div>
+
+        <div id="nowPlaying" class="now-playing" style="display: none;">
+            <h3>Now Playing</h3>
+            <div id="trackInfo"></div>
+            <audio id="audioPlayer" preload="none"></audio>
+            <div id="syncInfo"></div>
+        </div>
+
+        <div class="queue">
+            <h3>Queue (<span id="queueCount">0</span>)</h3>
+            <div id="queueList"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
