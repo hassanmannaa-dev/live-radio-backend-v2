@@ -499,17 +499,50 @@ class LiveRadioClient {
         }
     }
 
+    extractVideoId(input) {
+        // If it's already a valid 11-character video ID, return it
+        if (/^[a-zA-Z0-9_-]{11}$/.test(input)) {
+            return input;
+        }
+
+        // Try to extract video ID from various YouTube URL formats
+        const patterns = [
+            // youtube.com/watch?v=VIDEO_ID
+            /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
+            // youtu.be/VIDEO_ID
+            /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+            // music.youtube.com/watch?v=VIDEO_ID
+            /(?:music\.youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
+            // youtube.com/embed/VIDEO_ID
+            /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+            // youtube.com/v/VIDEO_ID
+            /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/
+        ];
+
+        for (const pattern of patterns) {
+            const match = input.match(pattern);
+            if (match && match[1]) {
+                return match[1];
+            }
+        }
+
+        return null;
+    }
+
     async requestSong() {
         const input = document.getElementById('videoIdInput');
-        const videoId = input.value.trim();
+        const inputValue = input.value.trim();
 
-        if (!videoId) {
-            alert('Please enter a video ID');
+        if (!inputValue) {
+            alert('Please enter a YouTube URL or video ID');
             return;
         }
 
-        if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-            alert('Invalid video ID format. Must be 11 characters.');
+        // Extract video ID from URL or use directly if it's already an ID
+        let videoId = this.extractVideoId(inputValue);
+
+        if (!videoId) {
+            alert('Invalid YouTube URL or video ID');
             return;
         }
 

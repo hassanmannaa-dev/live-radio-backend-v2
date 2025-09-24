@@ -43,7 +43,11 @@ class PlaybackCoordinator {
     } else {
       this.queue.push(queueItem);
       this.broadcastQueueUpdate();
-      console.log('Added to queue:', videoId, 'position:', this.queue.length);
+      console.log('Added to queue, starting background download:', videoId, 'position:', this.queue.length);
+
+      // Start downloading immediately in the background
+      this.startBackgroundDownload(queueItem);
+
       return { accepted: true, position: this.queue.length, id: queueItem.id };
     }
   }
@@ -74,6 +78,68 @@ class PlaybackCoordinator {
         id: queueItem.id
       });
       await this.processNextInQueue();
+    }
+  }
+
+  async startBackgroundDownload(queueItem) {
+    console.log('Starting background download:', queueItem.videoId);
+
+    // Emit downloading status for this specific queue item
+    this.io.emit('downloading', {
+      id: queueItem.id,
+      videoId: queueItem.videoId
+    });
+
+    try {
+      // Create progress callback to emit real-time progress updates
+      const progressCallback = (progressData) => {
+        this.io.emit('downloadProgress', {
+          id: queueItem.id,
+          videoId: queueItem.videoId,
+          ...progressData
+        });
+      };
+
+      const downloadResult = await this.downloadService.download(queueItem.videoId, progressCallback);
+
+      // Store the download result in the queue item
+      const queueIndex = this.queue.findIndex(item => item.id === queueItem.id);
+      if (queueIndex !== -1) {
+        this.queue[queueIndex] = {
+          ...this.queue[queueIndex],
+          ...downloadResult,
+          downloaded: true
+        };
+
+        // Register the file with temp file manager
+        this.tempFileManager.registerFile(downloadResult.id, downloadResult.filepath);
+
+        console.log('Background download completed:', queueItem.videoId, downloadResult.title);
+
+        // Emit that this queue item has finished downloading
+        this.io.emit('queueItemDownloaded', {
+          id: queueItem.id,
+          videoId: queueItem.videoId,
+          title: downloadResult.title
+        });
+
+        // Update the queue to reflect the new title
+        this.broadcastQueueUpdate();
+      }
+    } catch (error) {
+      console.log('Background download failed:', error.message, 'videoId:', queueItem.videoId);
+
+      // Find the queue item and mark it as failed
+      const queueIndex = this.queue.findIndex(item => item.id === queueItem.id);
+      if (queueIndex !== -1) {
+        this.queue[queueIndex].downloadFailed = true;
+        this.queue[queueIndex].error = error.message;
+      }
+
+      this.io.emit('error', {
+        message: `Background download failed: ${error.message}`,
+        id: queueItem.id
+      });
     }
   }
 
@@ -154,7 +220,34 @@ class PlaybackCoordinator {
     const nextItem = this.queue.shift();
     this.currentTrack = nextItem;
     this.broadcastQueueUpdate();
-    await this.startDownload(nextItem);
+
+    // Check if the item has already been downloaded
+    if (nextItem.downloaded && nextItem.filepath) {
+      console.log('Using pre-downloaded file for:', nextItem.videoId, nextItem.title);
+
+      // Create a download result object from the already downloaded item
+      const downloadResult = {
+        id: nextItem.id,
+        title: nextItem.title,
+        durationSec: nextItem.durationSec,
+        filepath: nextItem.filepath
+      };
+
+      await this.onDownloadComplete(nextItem, downloadResult);
+    } else if (nextItem.downloadFailed) {
+      console.log('Skipping failed download:', nextItem.videoId, nextItem.error);
+
+      this.io.emit('error', {
+        message: `Skipping failed song: ${nextItem.error}`,
+        id: nextItem.id
+      });
+
+      // Move to next item
+      await this.processNextInQueue();
+    } else {
+      // Item hasn't been downloaded yet, start download normally
+      await this.startDownload(nextItem);
+    }
   }
 
   broadcastQueueUpdate() {
@@ -162,7 +255,9 @@ class PlaybackCoordinator {
       queue: this.queue.map(item => ({
         id: item.id,
         videoId: item.videoId,
-        title: item.title || null
+        title: item.title || null,
+        downloaded: item.downloaded || false,
+        downloadFailed: item.downloadFailed || false
       }))
     });
   }
@@ -173,7 +268,9 @@ class PlaybackCoordinator {
       queue: this.queue.map(item => ({
         id: item.id,
         videoId: item.videoId,
-        title: item.title || null
+        title: item.title || null,
+        downloaded: item.downloaded || false,
+        downloadFailed: item.downloadFailed || false
       }))
     };
 
@@ -242,6 +339,16 @@ class PlaybackCoordinator {
       this.queue.splice(queueIndex, 1);
 
       console.log('Removed song from queue:', songId);
+
+      // If the song was already downloaded, clean up the file
+      if (canceledSong.downloaded && canceledSong.filepath) {
+        try {
+          await this.tempFileManager.deleteFile(canceledSong.id);
+          console.log('Canceled pre-downloaded song file deleted:', canceledSong.id);
+        } catch (error) {
+          console.log('Failed to delete canceled pre-downloaded song file:', error.message);
+        }
+      }
 
       // Update queue for all clients
       this.broadcastQueueUpdate();
