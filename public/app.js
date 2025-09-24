@@ -112,9 +112,9 @@ class LiveRadioClient {
     }
 
     setupEventListeners() {
-        document.getElementById('videoIdInput').addEventListener('keypress', (e) => {
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                this.requestSong();
+                this.searchSong();
             }
         });
 
@@ -529,8 +529,102 @@ class LiveRadioClient {
         return null;
     }
 
+    async searchSong() {
+        const input = document.getElementById('searchInput');
+        const query = input.value.trim();
+
+        if (!query) {
+            alert('Please enter a search term');
+            return;
+        }
+
+        // Check if it's a YouTube URL or ID, if so, use direct add
+        const videoId = this.extractVideoId(query);
+        if (videoId) {
+            this.requestSongById(videoId);
+            input.value = '';
+            return;
+        }
+
+        // Show loading state
+        const searchButton = document.getElementById('searchButton');
+        const originalText = searchButton.textContent;
+        searchButton.innerHTML = 'Searching <div class="loading-spinner"></div>';
+        searchButton.disabled = true;
+
+        try {
+            // Make API call to search for songs
+            const response = await fetch('/api/search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query })
+            });
+
+            if (!response.ok) {
+                throw new Error('Search failed');
+            }
+
+            const data = await response.json();
+            this.displaySearchResults(data.results || []);
+        } catch (error) {
+            console.error('Search error:', error);
+            alert('Search failed. Please try again.');
+        } finally {
+            // Reset button
+            searchButton.textContent = originalText;
+            searchButton.disabled = false;
+        }
+    }
+
+    displaySearchResults(results) {
+        const searchResults = document.getElementById('searchResults');
+        const searchResultsList = document.getElementById('searchResultsList');
+
+        if (!results || results.length === 0) {
+            searchResults.style.display = 'none';
+            alert('No results found. Try a different search term.');
+            return;
+        }
+
+        // Show only first 3 results
+        const topResults = results.slice(0, 3);
+
+        searchResultsList.innerHTML = topResults.map(result => `
+            <div class="search-result-item" onclick="selectSearchResult('${result.videoId}')">
+                <img src="${result.thumbnail}" alt="Thumbnail" class="result-thumbnail" onerror="this.style.display='none'">
+                <div class="result-info">
+                    <div class="result-title">${this.escapeHtml(result.title)}</div>
+                    <div class="result-channel">${this.escapeHtml(result.channel)}</div>
+                    <div class="result-duration">${this.formatDuration(result.duration)}</div>
+                </div>
+            </div>
+        `).join('');
+
+        searchResults.style.display = 'block';
+    }
+
+    selectSearchResult(videoId) {
+        // Hide search results
+        document.getElementById('searchResults').style.display = 'none';
+
+        // Clear search input
+        document.getElementById('searchInput').value = '';
+
+        // Request the selected song
+        this.requestSongById(videoId);
+    }
+
+    formatDuration(seconds) {
+        if (!seconds) return 'Unknown';
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
     async requestSong() {
-        const input = document.getElementById('videoIdInput');
+        const input = document.getElementById('searchInput');
         const inputValue = input.value.trim();
 
         if (!inputValue) {
@@ -543,6 +637,16 @@ class LiveRadioClient {
 
         if (!videoId) {
             alert('Invalid YouTube URL or video ID');
+            return;
+        }
+
+        this.requestSongById(videoId);
+        input.value = '';
+    }
+
+    async requestSongById(videoId) {
+        if (!videoId) {
+            alert('Invalid video ID');
             return;
         }
 
@@ -703,8 +807,16 @@ class LiveRadioClient {
     }
 }
 
+window.searchSong = function() {
+    window.client.searchSong();
+};
+
 window.requestSong = function() {
     window.client.requestSong();
+};
+
+window.selectSearchResult = function(videoId) {
+    window.client.selectSearchResult(videoId);
 };
 
 window.cancelSong = function(songId) {

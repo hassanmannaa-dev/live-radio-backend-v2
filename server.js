@@ -202,6 +202,27 @@ app.get('/audio/:id', async (req, res) => {
   }
 });
 
+app.post('/api/search', async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    if (query.trim().length > 100) {
+      return res.status(400).json({ error: 'Query too long (max 100 characters)' });
+    }
+
+    // Use the download service to search for videos
+    const results = await downloadService.searchVideos(query.trim());
+    res.json({ results });
+  } catch (error) {
+    console.log('Error handling search request:', error.message);
+    res.status(500).json({ error: 'Search failed. Please try again.' });
+  }
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: clockService.nowEpochMs() });
 });
