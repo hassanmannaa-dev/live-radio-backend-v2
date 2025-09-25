@@ -318,10 +318,26 @@
             white-space: nowrap;
         }
 
-        .result-channel {
-            color: #666;
+        .result-artist {
+            color: #007bff;
             font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        .result-album {
+            color: #666;
+            font-size: 13px;
             margin-bottom: 4px;
+            font-style: italic;
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .result-album:empty {
+            display: none;
         }
 
         .result-duration {

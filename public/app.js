@@ -592,11 +592,12 @@ class LiveRadioClient {
         const topResults = results.slice(0, 3);
 
         searchResultsList.innerHTML = topResults.map(result => `
-            <div class="search-result-item" onclick="selectSearchResult('${result.videoId}')">
-                <img src="${result.thumbnail}" alt="Thumbnail" class="result-thumbnail" onerror="this.style.display='none'">
+            <div class="search-result-item" onclick="selectSearchResult('${result.videoId || result.id}')">
+                <img src="${result.thumbnail}" alt="Album Cover" class="result-thumbnail" onerror="this.style.display='none'">
                 <div class="result-info">
-                    <div class="result-title">${this.escapeHtml(result.title)}</div>
-                    <div class="result-channel">${this.escapeHtml(result.channel)}</div>
+                    <div class="result-title">${this.escapeHtml(result.title || 'Unknown Title')}</div>
+                    <div class="result-artist">${this.escapeHtml(result.artist || 'Unknown Artist')}</div>
+                    <div class="result-album">${this.escapeHtml(result.album || '')}</div>
                     <div class="result-duration">${this.formatDuration(result.duration)}</div>
                 </div>
             </div>

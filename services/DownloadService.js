@@ -238,12 +238,41 @@ class DownloadService {
   async searchVideos(query, maxResults = 3) {
     console.log("Searching for videos:", query);
 
+    try {
+      // First, get the search results to extract video IDs
+      const searchIds = await this.getSearchIds(query, maxResults);
+
+      // Then fetch detailed info for each video ID
+      const detailedResults = await Promise.all(
+        searchIds.map(id => this.getVideoDetails(id))
+      );
+
+      // Filter out any failed requests
+      const validResults = detailedResults.filter(result => result !== null);
+
+      console.log(
+        `Search completed: ${validResults.length} results for "${query}"`
+      );
+
+      return validResults;
+    } catch (error) {
+      console.log(
+        "Error in searchVideos:",
+        query,
+        "error:",
+        error.message
+      );
+      throw error;
+    }
+  }
+
+  async getSearchIds(query, maxResults) {
     return new Promise((resolve, reject) => {
       const args = [
+        "-j",
         "--flat-playlist",
-        "--dump-json",
-        "--playlist-end",
-        maxResults.toString(),
+        "--playlist-items",
+        `1-${maxResults}`,
         `https://music.youtube.com/search?q=${encodeURIComponent(query)}`,
       ];
 
@@ -254,7 +283,7 @@ class DownloadService {
       const timeout = setTimeout(() => {
         ytDlp.kill("SIGTERM");
         reject(new Error("Search timeout exceeded"));
-      }, 30000); // 30 second timeout for search
+      }, 30000);
 
       ytDlp.stdout.on("data", (data) => {
         stdout += data.toString();
@@ -287,27 +316,15 @@ class DownloadService {
             .trim()
             .split("\n")
             .filter((line) => line.trim());
-          const results = [];
+          const ids = [];
 
           for (const line of lines) {
             try {
-              const videoData = JSON.parse(line);
-
-              // Skip if it's not a valid video
-              if (!videoData.id || !videoData.title) continue;
-
-              results.push({
-                videoId: videoData.id,
-                title: videoData.title,
-                channel: videoData.uploader || videoData.channel || "Unknown",
-                duration: videoData.duration || null,
-                thumbnail: this.getBestThumbnail(videoData.thumbnails),
-                url:
-                  videoData.webpage_url ||
-                  `https://music.youtube.com/watch?v=${videoData.id}`,
-              });
-
-              if (results.length >= maxResults) break;
+              const info = JSON.parse(line);
+              if (info.id) {
+                ids.push(info.id);
+                if (ids.length >= maxResults) break;
+              }
             } catch (parseError) {
               console.log(
                 "Failed to parse search result line:",
@@ -317,32 +334,97 @@ class DownloadService {
             }
           }
 
-          console.log(
-            `Search completed: ${results.length} results for "${query}"`
-          );
-          resolve(results);
+          resolve(ids);
         } catch (error) {
-          console.log(
-            "Error processing search results:",
-            query,
-            "error:",
-            error.message
-          );
           reject(error);
         }
       });
 
       ytDlp.on("error", (error) => {
         clearTimeout(timeout);
-        console.log(
-          "yt-dlp search spawn error:",
-          query,
-          "error:",
-          error.message
-        );
         reject(
           new Error(`Failed to spawn yt-dlp for search: ${error.message}`)
         );
+      });
+    });
+  }
+
+  async getVideoDetails(id) {
+    return new Promise((resolve, reject) => {
+      const args = [
+        "-j",
+        `https://music.youtube.com/watch?v=${id}`,
+      ];
+
+      const ytDlp = spawn(this.ytDlpPath, args);
+      let stdout = "";
+      let stderr = "";
+
+      const timeout = setTimeout(() => {
+        ytDlp.kill("SIGTERM");
+        reject(new Error("Video details timeout exceeded"));
+      }, 15000); // 15 second timeout for individual video
+
+      ytDlp.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      ytDlp.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      ytDlp.on("close", (code) => {
+        clearTimeout(timeout);
+
+        if (code !== 0) {
+          console.log(
+            "yt-dlp video details failed:",
+            id,
+            "code:",
+            code,
+            "stderr:",
+            stderr
+          );
+          resolve(null); // Return null instead of rejecting to allow other videos to succeed
+          return;
+        }
+
+        try {
+          const info = JSON.parse(stdout.trim());
+
+          const result = {
+            id: info.id,
+            title: info.title,
+            artist: info.artist || info.uploader,
+            album: info.album || null,
+            duration: info.duration || null,
+            thumbnail: info.thumbnail,
+            url: info.webpage_url || `https://music.youtube.com/watch?v=${info.id}`,
+            playlist: info.playlist_id || null,
+            videoId: info.id // Keep for backward compatibility
+          };
+
+          resolve(result);
+        } catch (error) {
+          console.log(
+            "Error parsing video details:",
+            id,
+            "error:",
+            error.message
+          );
+          resolve(null);
+        }
+      });
+
+      ytDlp.on("error", (error) => {
+        clearTimeout(timeout);
+        console.log(
+          "yt-dlp video details spawn error:",
+          id,
+          "error:",
+          error.message
+        );
+        resolve(null);
       });
     });
   }
